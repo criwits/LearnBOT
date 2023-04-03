@@ -1,3 +1,4 @@
 .bsp
 out
 target
+src/main/scala/top/criwits/learnbot/Config.scala

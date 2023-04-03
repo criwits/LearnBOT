@@ -25,7 +25,7 @@ final class EventServlet extends HttpServlet {
     if (msg.challenge != null && !msg.challenge.isBlank) {
       // Event registration
       if (msg.token != null && msg.token ==Config.verificationToken) {
-        resp.getWriter.println(s"{ \"challenge\": \"${msg.challenge}}\"")
+        resp.getWriter.println(s"{ \"challenge\": \"${msg.challenge}\" }")
       }
     }
 
@@ -37,6 +37,12 @@ final class EventServlet extends HttpServlet {
         val text = JsonHelper(content, classOf[Content])
         val senderID = msg.event.sender.senderID.userID
         LOG.info(s"Received message from $senderID: $text")
+        if (text.text != null) {
+          val contentText = text.text
+          if (Config.adminUsersID.contains(senderID)) {
+            // Message from Yu Kangmeng -- handle it!
+          }
+        }
       }
     }
 
