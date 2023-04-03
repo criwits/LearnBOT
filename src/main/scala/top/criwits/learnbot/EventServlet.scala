@@ -1,7 +1,11 @@
 package top.criwits.learnbot
 
 import com.typesafe.scalalogging.Logger
-import jakarta.servlet.http.{HttpServlet, HttpServletRequest, HttpServletResponse}
+import jakarta.servlet.http.{
+  HttpServlet,
+  HttpServletRequest,
+  HttpServletResponse
+}
 import top.criwits.learnbot.json.{Content, Msg}
 
 /** This is the [[HttpServlet]] for Feishu events.
@@ -24,23 +28,35 @@ final class EventServlet extends HttpServlet {
 
     if (msg.challenge != null && !msg.challenge.isBlank) {
       // Event registration
-      if (msg.token != null && msg.token ==Config.verificationToken) {
-        resp.getWriter.println(s"{ \"challenge\": \"${msg.challenge}\" }")
+      if (msg.token != null && msg.token == Config.verificationToken) {
+        resp.getWriter.println(s"""{
+             |  "challenge": "${msg.challenge}"
+             |""".stripMargin)
       }
     }
 
-    if (msg.header!=null && msg.header.token!=null && msg.header.token == Config.verificationToken && msg.event != null && msg.event.sender != null && msg.event.sender.senderID != null && msg.event.sender.senderID.userID != null) {
+    if (
+      msg.header != null && msg.header.token != null && msg.header.token == Config.verificationToken && msg.event != null && msg.event.sender != null && msg.event.sender.senderID != null && msg.event.sender.senderID.userID != null
+    ) {
       // An message
-      if (msg.event.message != null && msg.event.message.content != null && !msg.event.message.content.isBlank) {
+      if (
+        msg.event.message != null && msg.event.message.content != null && !msg.event.message.content.isBlank
+      ) {
         // A message with content
         val content = msg.event.message.content
         val text = JsonHelper(content, classOf[Content])
-        val senderID = msg.event.sender.senderID.userID
+        val senderID = msg.event.sender.senderID.openID
         LOG.info(s"Received message from $senderID: $text")
         if (text.text != null) {
           val contentText = text.text
           if (Config.adminUsersID.contains(senderID)) {
-            // Message from Yu Kangmeng -- handle it!
+            // Message from administrator -- handle it!
+            Handler.handle(senderID, contentText)
+          } else {
+            // Message from other student -- introduce myself!
+            Handler.sendSingleMessage(
+              s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。",
+              senderID)
           }
         }
       }
@@ -48,7 +64,7 @@ final class EventServlet extends HttpServlet {
 
     // To simplify the implementation, all events all be responded with '200 OK'.
     resp.setContentType("application/json")
-      resp.setStatus(HttpServletResponse.SC_OK)
+    resp.setStatus(HttpServletResponse.SC_OK)
 
   }
 }
