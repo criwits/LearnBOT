@@ -12,8 +12,8 @@ import java.time.format.DateTimeFormatter
 
 object FeishuAPI {
   var myTenantAcessToken: Option[(Long, TenantAcessToken)] = None
-  // (timestamp, list[id, name])
-  var previousLoadedList: Option[(Long, Seq[(String, String)])] = None
+  // (timestamp, list[id, name], sentence)
+  var previousLoadedList: Option[(Long, Seq[(String, String)], String)] = None
   val LOG = Logger("Handler")
 
   def handle(admin: String, msg: String): Unit = {
@@ -39,8 +39,9 @@ object FeishuAPI {
           sendSingleMessage("上次请求已过期。请重新上传发送名单。", admin)
           return
         }
-        val r =
-          sendGroupMessage(s"记得看本周的青年大学习！(${DateTimeFormatter.ISO_LOCAL_DATE.format(LocalDateTime.now())})", previousLoadedList.get._2.map(_._1))
+        val r = {
+          sendGroupMessage(previousLoadedList.get._3, previousLoadedList.get._2.map(_._1))
+        }
         if (r.code != 0) {
           LOG.error(
             s"Failed to send message. Code: ${r.code}, Message: ${r.msg}"
@@ -49,17 +50,17 @@ object FeishuAPI {
           return
         }
         previousLoadedList = None
-        sendSingleMessage("消息发送成功，辛苦啦！10 分钟后我会返回消息的阅读情况。", admin)
+        sendSingleMessage("消息发送成功，辛苦啦！10 分钟后我会收集消息的接收情况。", admin)
         val runnable: Runnable = () => {
           val msgID = r.data.messageID
           Thread.sleep(600000)
 
           val status = checkMessageStatus(msgID)
           if (status.code != 0) {
-            sendSingleMessage("未能查询到消息的发送情况。服务器返回的消息是: " + status.msg, admin)
+            sendSingleMessage("未能查询到消息的接收情况。服务器返回的消息是: " + status.msg, admin)
           } else {
             sendSingleMessage(
-              s"消息发送状态如下：已读人数：${status.data.readUser.readCount}，总发送成功人数：${status.data.readUser.totalCount}。",
+              s"消息状态如下：已读人数：${status.data.readUser.readCount}，总发送成功人数：${status.data.readUser.totalCount}。",
               admin
             )
           }
@@ -81,9 +82,13 @@ object FeishuAPI {
           return
         }
 
-        previousLoadedList = Some((System.currentTimeMillis() / 1000, sendList))
+        // Generate sentence
+        val chosenSentence = SentenceGenerator.randomYouthStudySentence
+        val displaySentence = chosenSentence._2
+        val realSentence = {if (chosenSentence._1) displaySentence.replace("\\\\", "\\") else displaySentence} + "  (" + DateTimeFormatter.ISO_LOCAL_DATE.format(LocalDateTime.now()) + ")"
+        previousLoadedList = Some((System.currentTimeMillis() / 1000, sendList, realSentence))
         sendSingleMessage(
-          s"即将向如下 ${sendList.length} 个同学发送提醒。在 5 分钟内回复字母 Y 继续。\\\\n${sendList.map(_._2).mkString(", ")}。",
+          s"即将向如下 ${sendList.length} 个同学发送提醒。在 5 分钟内回复字母 Y 继续。\\\\n${sendList.map(_._2).mkString(", ")}。\\\\n本次使用的消息为：${displaySentence}",
           admin
         )
     }
