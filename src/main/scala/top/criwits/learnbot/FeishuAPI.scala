@@ -5,9 +5,12 @@ import com.typesafe.scalalogging.Logger
 import org.apache.http.client.methods.{HttpGet, HttpPost}
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
-import top.criwits.learnbot.json.{BatchResponse, GroupInfo, GroupMembers, TenantAcessToken}
+import top.criwits.learnbot.json.{BatchResponse, BatchStatus, GroupInfo, GroupMembers, TenantAcessToken}
 
-object Handler {
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+object FeishuAPI {
   var myTenantAcessToken: Option[(Long, TenantAcessToken)] = None
   // (timestamp, list[id, name])
   var previousLoadedList: Option[(Long, Seq[(String, String)])] = None
@@ -37,7 +40,7 @@ object Handler {
           return
         }
         val r =
-          sendGroupMessage("记得看本周的青年大学习！", previousLoadedList.get._2.map(_._1))
+          sendGroupMessage(s"记得看本周的青年大学习！(${DateTimeFormatter.ISO_LOCAL_DATE.format(LocalDateTime.now())})", previousLoadedList.get._2.map(_._1))
         if (r.code != 0) {
           LOG.error(
             s"Failed to send message. Code: ${r.code}, Message: ${r.msg}"
@@ -46,7 +49,22 @@ object Handler {
           return
         }
         previousLoadedList = None
-        sendSingleMessage("消息发送成功！辛苦啦！", admin)
+        sendSingleMessage("消息发送成功，辛苦啦！10 分钟后我会返回消息的阅读情况。", admin)
+        val runnable: Runnable = () => {
+          val msgID = r.data.messageID
+          Thread.sleep(600000)
+
+          val status = checkMessageStatus(msgID)
+          if (status.code != 0) {
+            sendSingleMessage("未能查询到消息的发送情况。服务器返回的消息是: " + status.msg, admin)
+          } else {
+            sendSingleMessage(
+              s"消息发送状态如下：已读人数：${status.data.readUser.readCount}，总发送成功人数：${status.data.readUser.totalCount}。",
+              admin
+            )
+          }
+        }
+        new Thread(runnable, s"${r.data.messageID}-status").start()
 
       case _ =>
         previousLoadedList = None
@@ -65,7 +83,7 @@ object Handler {
 
         previousLoadedList = Some((System.currentTimeMillis() / 1000, sendList))
         sendSingleMessage(
-          s"即将向如下同学发送提醒。在 5 分钟内回复字母 Y 继续。\\\\n${sendList.map(_._2).mkString(", ")}。",
+          s"即将向如下 ${sendList.length} 个同学发送提醒。在 5 分钟内回复字母 Y 继续。\\\\n${sendList.map(_._2).mkString(", ")}。",
           admin
         )
     }
@@ -137,7 +155,7 @@ object Handler {
 
         // SECOND -- get ALL people in this group
         val URL =
-          "https://open.feishu.cn/open-apis/im/v1/chats/" + groupID + "/members"
+          "https://open.feishu.cn/open-apis/im/v1/chats/" + groupID + "/members?member_id_type=open_id&page_size=50"
         val get = new HttpGet(URL)
         get.setHeader(
           "Authorization",
@@ -221,5 +239,25 @@ object Handler {
 
     val result = JsonHelper(responseBody, classOf[BatchResponse])
     result
+  }
+
+  def checkMessageStatus(msgID: String): BatchStatus = {
+    val URL = "https://open.feishu.cn/open-apis/im/v1/batch_messages/" + msgID + "/read_user"
+    val get = new HttpGet(URL)
+    get.setHeader(
+      "Authorization",
+      "Bearer " + myTenantAcessToken.get._2.tenantAccessToken
+    )
+
+    val client = HttpClientBuilder.create().build()
+    val response = client.execute(get)
+    val responseBody =
+      scala.io.Source.fromInputStream(response.getEntity.getContent).mkString
+    response.close()
+    client.close()
+
+    LOG.info("Check message status: " + responseBody)
+    val json = JsonHelper(responseBody, classOf[BatchStatus])
+    json
   }
 }

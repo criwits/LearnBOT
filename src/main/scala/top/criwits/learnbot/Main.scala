@@ -9,7 +9,7 @@ object Main {
 
   def main(args: Array[String]): Unit = {
     LOG.info("This is LearnBOT!")
-    Handler
+    FeishuAPI
 
     val server = new Server(Config.port)
     val handler = new ServletHandler

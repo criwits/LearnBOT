@@ -31,6 +31,7 @@ final class EventServlet extends HttpServlet {
       if (msg.token != null && msg.token == Config.verificationToken) {
         resp.getWriter.println(s"""{
              |  "challenge": "${msg.challenge}"
+             |}
              |""".stripMargin)
       }
     }
@@ -38,7 +39,7 @@ final class EventServlet extends HttpServlet {
     if (
       msg.header != null && msg.header.token != null && msg.header.token == Config.verificationToken && msg.event != null && msg.event.sender != null && msg.event.sender.senderID != null && msg.event.sender.senderID.userID != null
     ) {
-      // An message
+      // A message
       if (
         msg.event.message != null && msg.event.message.content != null && !msg.event.message.content.isBlank
       ) {
@@ -51,10 +52,10 @@ final class EventServlet extends HttpServlet {
           val contentText = text.text
           if (Config.adminUsersID.contains(senderID)) {
             // Message from administrator -- handle it!
-            Handler.handle(senderID, contentText)
+            FeishuAPI.handle(senderID, contentText)
           } else {
             // Message from other student -- introduce myself!
-            Handler.sendSingleMessage(
+            FeishuAPI.sendSingleMessage(
               s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。",
               senderID)
           }
