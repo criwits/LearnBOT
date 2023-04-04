@@ -45,21 +45,23 @@ final class EventServlet extends HttpServlet {
       ) {
         // A message with content
         val content = msg.event.message.content
-        val text = JsonHelper(content, classOf[Content])
+        val contentBody = JsonHelper(content, classOf[Content])
         val senderID = msg.event.sender.senderID.openID
-        LOG.info(s"Received message from $senderID: $text")
-        if (text.text != null) {
-          val contentText = text.text
-          if (Config.adminUsersID.contains(senderID)) {
-            // Message from administrator -- handle it!
+        LOG.info(s"Received message from $senderID: $contentBody")
+        if (Config.adminUsersID.contains(senderID)) {
+          // Message from administrator -- handle it!
+          if (contentBody.text != null) {
+            val contentText = contentBody.text
             FeishuAPI.handle(senderID, contentText)
-          } else {
-            // Message from other student -- introduce myself!
-            FeishuAPI.sendSingleMessage(
-              s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。",
-              senderID)
           }
+        } else {
+          // Message from other student -- introduce myself!
+          FeishuAPI.sendSingleMessage(
+            s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。",
+            senderID
+          )
         }
+
       }
     }
 
