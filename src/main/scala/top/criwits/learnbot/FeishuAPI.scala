@@ -2,11 +2,13 @@ package top.criwits.learnbot
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.typesafe.scalalogging.Logger
+import org.apache.http.HttpStatus
 import org.apache.http.client.methods.{HttpGet, HttpPost}
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
 import top.criwits.learnbot.json.{BatchResponse, BatchStatus, GroupInfo, GroupMembers, TenantAcessToken}
 
+import java.io.{BufferedOutputStream, FileOutputStream, IOException}
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -16,16 +18,53 @@ object FeishuAPI {
   var previousLoadedList: Option[(Long, Seq[(String, String)], String)] = None
   val LOG = Logger("Handler")
 
-  def handle(admin: String, msg: String): Unit = {
-    // Check access token status
+  def updateKey(): Boolean = this.synchronized {
+    def updateTenantToken(): Boolean = {
+      val URL =
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+      val body = s"""{
+                    |  "app_id": "${Config.appID}",
+                    |  "app_secret": "${Config.appSecret}"
+                    |}""".stripMargin
+
+      val post = new HttpPost(URL)
+      post.setHeader("Content-Type", "application/json, charset=utf-8")
+      post.setEntity(new StringEntity(body, "UTF-8"))
+
+      val client = HttpClientBuilder.create().build()
+      val response = client.execute(post)
+      val responseBody =
+        scala.io.Source.fromInputStream(response.getEntity.getContent).mkString
+      response.close()
+      client.close()
+
+      val tenantAcessToken = JsonHelper(responseBody, classOf[TenantAcessToken])
+      if (tenantAcessToken.code != 0) {
+        LOG.error("Cannot get tenant access token: " + tenantAcessToken.msg)
+        false
+      } else {
+        LOG.info("Got tenant access token: " + tenantAcessToken.tenantAccessToken)
+        myTenantAcessToken = Some(
+          (System.currentTimeMillis() / 1000, tenantAcessToken)
+        )
+        true
+      }
+    }
+
     if (
       myTenantAcessToken.isEmpty || (myTenantAcessToken.get._1 + myTenantAcessToken.get._2.expire - 1200) < System
         .currentTimeMillis() / 1000
     ) {
       LOG.info("Need to update key")
       if (!updateTenantToken())
-        return
+        return false
     }
+
+    true
+  }
+
+  def handle(admin: String, msg: String): Unit = {
+    updateKey()
 
     // Process message
     msg.trim match {
@@ -95,39 +134,8 @@ object FeishuAPI {
 
   }
 
-  def updateTenantToken(): Boolean = {
-    val URL =
-      "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-    val body = s"""{
-                  |  "app_id": "${Config.appID}",
-                  |  "app_secret": "${Config.appSecret}"
-                  |}""".stripMargin
-
-    val post = new HttpPost(URL)
-    post.setHeader("Content-Type", "application/json, charset=utf-8")
-    post.setEntity(new StringEntity(body, "UTF-8"))
-
-    val client = HttpClientBuilder.create().build()
-    val response = client.execute(post)
-    val responseBody =
-      scala.io.Source.fromInputStream(response.getEntity.getContent).mkString
-    response.close()
-    client.close()
-
-    val tenantAcessToken = JsonHelper(responseBody, classOf[TenantAcessToken])
-    if (tenantAcessToken.code != 0) {
-      LOG.error("Cannot get tenant access token: " + tenantAcessToken.msg)
-      false
-    } else {
-      LOG.info("Got tenant access token: " + tenantAcessToken.tenantAccessToken)
-      myTenantAcessToken = Some(
-        (System.currentTimeMillis() / 1000, tenantAcessToken)
-      )
-      true
-    }
-  }
-
   def getAllClassmates: Seq[(String, String)] = {
+    updateKey()
     // FIRST -- get all group chats!
     val URL = "https://open.feishu.cn/open-apis/im/v1/chats"
 
@@ -264,5 +272,45 @@ object FeishuAPI {
     LOG.info("Check message status: " + responseBody)
     val json = JsonHelper(responseBody, classOf[BatchStatus])
     json
+  }
+
+  def downloadChatFile(msgID: String, fileKey: String, fileName: String): Boolean = {
+    val URL = "https://open.feishu.cn/open-apis/im/v1/messages/" + msgID + "/resources/" + fileKey
+    val get = new HttpGet(URL)
+    get.setHeader(
+      "Authorization",
+      "Bearer " + myTenantAcessToken.get._2.tenantAccessToken
+    )
+
+    val client = HttpClientBuilder.create().build()
+    val response = client.execute(get)
+
+    // if not 200 OK then return
+    if (response.getStatusLine.getStatusCode != HttpStatus.SC_OK) {
+      return false
+    }
+
+    val is = response.getEntity.getContent
+    val fos = new FileOutputStream(fileName)
+
+    val buffer = Array[Byte](1024)
+    var length = 0
+    try {
+      while ( {
+        length = is.read(buffer)
+        length > 0
+      }) {
+        fos.write(buffer, 0, length)
+      }
+    } catch {
+      case _: IOException => return false
+    }
+
+    fos.close()
+    is.close()
+    response.close()
+    client.close()
+
+    true
   }
 }

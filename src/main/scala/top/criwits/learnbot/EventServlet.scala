@@ -48,20 +48,56 @@ final class EventServlet extends HttpServlet {
         val contentBody = JsonHelper(content, classOf[Content])
         val senderID = msg.event.sender.senderID.openID
         LOG.info(s"Received message from $senderID: $contentBody")
-        if (Config.adminUsersID.contains(senderID)) {
-          // Message from administrator -- handle it!
-          if (contentBody.text != null) {
-            val contentText = contentBody.text
-            FeishuAPI.handle(senderID, contentText)
+
+        // Plain text message
+        if (contentBody.text != null && !contentBody.text.isBlank) {
+          if (Config.adminUsersID.contains(senderID)) {
+            // Message from administrator -- handle it!
+            if (contentBody.text != null) {
+              val contentText = contentBody.text
+              FeishuAPI.handle(senderID, contentText)
+            }
+          } else {
+            // Message from other student -- introduce myself!
+            FeishuAPI.sendSingleMessage(
+              s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。\\\\n---\\\\n${SentenceGenerator.getNetworkSentence.getOrElse("我好像出了点问题。")}",
+              senderID
+            )
           }
-        } else {
-          // Message from other student -- introduce myself!
-          FeishuAPI.sendSingleMessage(
-            s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。\\\\n---\\\\n${SentenceGenerator.getNetworkSentence.getOrElse("我好像出了点问题。")}",
-            senderID
-          )
         }
 
+        // File message
+        if (contentBody.fileKey != null && !contentBody.fileKey.isBlank) {
+          // check filename
+          val fileName = contentBody.fileName.toLowerCase()
+          if (fileName.endsWith(".doc") || fileName.endsWith(".docx")) {
+            // who?
+            val stuList = FeishuAPI.getAllClassmates
+            val stu = stuList.find(_._1 == senderID)
+            if (stu.isEmpty) {
+               FeishuAPI.sendSingleMessage(
+              "出现了一些问题……麻烦您直接将作业交给班长，谢谢！", senderID
+              )
+            } else {
+              val name = stu.get._2
+              val id = StuList.students.get(name)
+              val fname = id + "-" + name + {if (fileName.endsWith(".docx")) ".docx" else ".doc"}
+
+              // save file
+              val save = FeishuAPI.downloadChatFile(msg.event.message.messageID, contentBody.fileKey, fname)
+              if (save) {
+                FeishuAPI.sendSingleMessage(s"已成功接收（${fname}）。", senderID)
+              } else {
+                FeishuAPI.sendSingleMessage(s"无法下载您的文件，这可能是由于文件过大或其他原因。麻烦您直接将作业交给班长，谢谢！", senderID)
+              }
+            }
+          } else {
+            // Not valid file
+            FeishuAPI.sendSingleMessage(
+              "文件格式好像不对。请向我发送扩展名为 `doc` 或 `docx` 的文件。", senderID
+            )
+          }
+        }
       }
     }
 
