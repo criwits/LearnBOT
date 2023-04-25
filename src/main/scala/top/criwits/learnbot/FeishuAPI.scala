@@ -196,6 +196,7 @@ object FeishuAPI {
   }
 
   def sendSingleMessage(msg: String, userID: String): Unit = {
+    updateKey()
     val URL =
       "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
     val body = s"""{
@@ -224,6 +225,7 @@ object FeishuAPI {
   }
 
   def sendGroupMessage(msg: String, userIDs: Seq[String]) = {
+    updateKey()
     val URL = "https://open.feishu.cn/open-apis/message/v4/batch_send/"
     val body = s"""{
                   |  "open_ids": [ ${userIDs.map(f => {"\"" + f + "\""}).mkString(", ")} ],
@@ -255,6 +257,7 @@ object FeishuAPI {
   }
 
   def checkMessageStatus(msgID: String): BatchStatus = {
+    updateKey()
     val URL = "https://open.feishu.cn/open-apis/im/v1/batch_messages/" + msgID + "/read_user"
     val get = new HttpGet(URL)
     get.setHeader(
@@ -275,7 +278,9 @@ object FeishuAPI {
   }
 
   def downloadChatFile(msgID: String, fileKey: String, fileName: String): Boolean = {
-    val URL = "https://open.feishu.cn/open-apis/im/v1/messages/" + msgID + "/resources/" + fileKey
+    updateKey()
+    val URL = "https://open.feishu.cn/open-apis/im/v1/messages/" + msgID + "/resources/" + fileKey + "?type=file"
+    LOG.info(s"Download file at $URL as $fileName")
     val get = new HttpGet(URL)
     get.setHeader(
       "Authorization",
@@ -287,13 +292,14 @@ object FeishuAPI {
 
     // if not 200 OK then return
     if (response.getStatusLine.getStatusCode != HttpStatus.SC_OK) {
+      LOG.error(s"Download return ${response.getStatusLine.getStatusCode}")
       return false
     }
 
     val is = response.getEntity.getContent
     val fos = new FileOutputStream(fileName)
 
-    val buffer = Array[Byte](1024)
+    val buffer = new Array[Byte](1024)
     var length = 0
     try {
       while ( {

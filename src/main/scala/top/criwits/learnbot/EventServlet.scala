@@ -80,13 +80,13 @@ final class EventServlet extends HttpServlet {
               )
             } else {
               val name = stu.get._2
-              val id = StuList.students.get(name)
+              val id = StuList.students(name)
               val fname = id + "-" + name + {if (fileName.endsWith(".docx")) ".docx" else ".doc"}
 
               // save file
               val save = FeishuAPI.downloadChatFile(msg.event.message.messageID, contentBody.fileKey, fname)
               if (save) {
-                FeishuAPI.sendSingleMessage(s"已成功接收（${fname}）。", senderID)
+                FeishuAPI.sendSingleMessage(s"已成功接收（${fname}），辛苦啦！", senderID)
               } else {
                 FeishuAPI.sendSingleMessage(s"无法下载您的文件，这可能是由于文件过大或其他原因。麻烦您直接将作业交给班长，谢谢！", senderID)
               }
