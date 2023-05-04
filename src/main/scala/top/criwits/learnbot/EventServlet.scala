@@ -60,7 +60,7 @@ final class EventServlet extends HttpServlet {
           } else {
             // Message from other student -- introduce myself!
             FeishuAPI.sendSingleMessage(
-              s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。\\\\n---\\\\n${SentenceGenerator.getNetworkSentence.getOrElse("我好像出了点问题。")}",
+              s"嗨！我是「青年大学习机器人」。你可以在 https://github.com/criwits/LearnBOT 找到我的源码。\\\\n---\\\\n好句推荐：${SentenceGenerator.getNetworkSentence.getOrElse("句子获取失败。")}",
               senderID
             )
           }
