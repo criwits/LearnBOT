@@ -8,7 +8,7 @@ import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
 import top.criwits.learnbot.json.{BatchResponse, BatchStatus, GroupInfo, GroupMembers, TenantAcessToken}
 
-import java.io.{BufferedOutputStream, FileOutputStream, IOException}
+import java.io.{BufferedOutputStream, File, FileOutputStream, IOException}
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -196,16 +196,18 @@ object FeishuAPI {
   }
 
   def sendSingleMessage(msg: String, userID: String): Unit = {
+    val body =
+      s"""{
+         |  "receive_id": "$userID",
+         |  "msg_type": "text",
+         |  "content": "{\\"text\\": \\"$msg\\"}"
+         |}""".stripMargin
+    sendMessageBody(body, userID)
+  }
+  private def sendMessageBody(body: String, userID: String): Unit = {
     updateKey()
     val URL =
       "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
-    val body = s"""{
-                  |  "receive_id": "$userID",
-                  |  "msg_type": "text",
-                  |  "content": "{\\"text\\": \\"$msg\\"}"
-                  |}""".stripMargin
-
-    LOG.info(s"Send message to $userID: $body")
     val post = new HttpPost(URL)
     post.setHeader("Content-Type", "application/json, charset=utf-8")
     post.setHeader(
@@ -220,8 +222,7 @@ object FeishuAPI {
       scala.io.Source.fromInputStream(response.getEntity.getContent).mkString
     response.close()
     client.close()
-
-    LOG.info("Send message to " + userID + ": " + responseBody)
+    LOG.info("Send body message to " + userID + ": " + responseBody)
   }
 
   def sendGroupMessage(msg: String, userIDs: Seq[String]) = {
@@ -319,4 +320,37 @@ object FeishuAPI {
 
     true
   }
+
+  def sendImage(file: File, userID: String) = {
+
+    def uploadImage(file: File): Unit = {
+      updateKey()
+      val URL = "https://open.feishu.cn/open-apis/im/v1/images"
+      val post = new HttpPost(URL)
+      post.setHeader("Content-Type", "multipart/form-data")
+      post.setHeader(
+        "Authorization",
+        "Bearer " + myTenantAcessToken.get._2.tenantAccessToken
+      )
+      // form image_type="message", "image"=binary
+      import org.apache.http.entity.mime.MultipartEntityBuilder
+      post.setEntity(
+        MultipartEntityBuilder
+          .create()
+          .addTextBody("image_type", "message")
+          .addBinaryBody("image", file)
+          .build()
+      )
+
+      val client = HttpClientBuilder.create().build()
+      val response = client.execute(post)
+      val responseBody =
+        scala.io.Source.fromInputStream(response.getEntity.getContent).mkString
+      response.close()
+      client.close()
+
+      LOG.info("Upload image: " + responseBody)
+    }
+  }
+
 }

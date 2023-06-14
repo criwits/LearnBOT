@@ -1,12 +1,15 @@
 package top.criwits.learnbot
 
 import com.typesafe.scalalogging.Logger
-import jakarta.servlet.http.{
-  HttpServlet,
-  HttpServletRequest,
-  HttpServletResponse
-}
+import jakarta.servlet.http.{HttpServlet, HttpServletRequest, HttpServletResponse}
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.rendering.{ImageType, PDFRenderer}
 import top.criwits.learnbot.json.{Content, Msg}
+
+import java.awt.image.BufferedImage
+import java.io.{File, PrintWriter}
+import java.util.UUID
+import javax.imageio.ImageIO
 
 /** This is the [[HttpServlet]] for Feishu events.
   * Events are callbacks from Feishu open APIs, mainly for message receiving.
@@ -67,34 +70,110 @@ final class EventServlet extends HttpServlet {
         }
 
         // File message
+        // For PrintCentre
         if (contentBody.fileKey != null && !contentBody.fileKey.isBlank) {
           // check filename
           val fileName = contentBody.fileName.toLowerCase()
-          if (fileName.endsWith(".doc") || fileName.endsWith(".docx")) {
-            // who?
-            val stuList = FeishuAPI.getAllClassmates
-            val stu = stuList.find(_._1 == senderID)
-            if (stu.isEmpty) {
-               FeishuAPI.sendSingleMessage(
-              "出现了一些问题……麻烦您直接将作业交给班长，谢谢！", senderID
-              )
-            } else {
-              val name = stu.get._2
-              val id = StuList.students(name)
-              val fname = id + "-" + name + {if (fileName.endsWith(".docx")) ".docx" else ".doc"}
+          if (fileName.endsWith(".pdf")) {
+            // save file
+            val uuid = UUID.randomUUID().toString
+            val baseName = s"./print/${uuid}"
+            val save = FeishuAPI.downloadChatFile(msg.event.message.messageID, contentBody.fileKey, baseName + ".pdf")
+            if (save) {
+              try {
+                // rotate even pages of PDF 180 degrees, and save as ...-duplex.pdf, using pdftk
+                val pdftk = new ProcessBuilder(
+                  "/usr/bin/pdftk",
+                  "A=" + baseName + ".pdf",
+                  "shuffle", "Aoddnorth", "Aevensouth",
+                  "output", baseName + "-duplex.pdf"
+                )
+                val pdftkProcess = pdftk.start()
+                pdftkProcess.waitFor()
+                if (pdftkProcess.exitValue() != 0) {
+                  throw new RuntimeException("pdftk failed")
+                }
 
-              // save file
-              val save = FeishuAPI.downloadChatFile(msg.event.message.messageID, contentBody.fileKey, fname)
-              if (save) {
-                FeishuAPI.sendSingleMessage(s"已成功接收（${fname}），辛苦啦！", senderID)
-              } else {
-                FeishuAPI.sendSingleMessage(s"无法下载您的文件，这可能是由于文件过大或其他原因。麻烦您直接将作业交给班长，谢谢！", senderID)
+                // execute pdf2printable -f urf -r 600 -c gray8 -q normal -aa <.pdf> <.urf> and wait
+                val pdf2printable = new ProcessBuilder(
+                  "/usr/bin/pdf2printable",
+                  "-f", "urf", "-r", "600", "-c", "gray8", "-q", "normal", "-aa",
+                  baseName + ".pdf",
+                  baseName + ".urf"
+                )
+                val pdf2printableProcess = pdf2printable.start()
+                pdf2printableProcess.waitFor()
+                if (pdf2printableProcess.exitValue() != 0) {
+                  throw new RuntimeException("pdf2printable failed")
+                }
+
+                // execute pdf2printable again for duplex version
+                val pdf2printableDuplex = new ProcessBuilder(
+                  "/usr/bin/pdf2printable",
+                  "-f", "urf", "-r", "600", "-c", "gray8", "-q", "normal", "-aa",
+                  baseName + "-duplex.pdf",
+                  baseName + "-duplex.urf"
+                )
+                val pdf2printableDuplexProcess = pdf2printableDuplex.start()
+                pdf2printableDuplexProcess.waitFor()
+                if (pdf2printableDuplexProcess.exitValue() != 0) {
+                  throw new RuntimeException("pdf2printable failed")
+                }
+
+                // Generate UUID QR code as <uuid>.png
+                val qrCode = new ProcessBuilder(
+                  "/usr/bin/qrencode",
+                  "-s", "10",
+                  "-o", baseName + ".png",
+                  uuid
+                )
+                val qrCodeProcess = qrCode.start()
+                qrCodeProcess.waitFor()
+                if (qrCodeProcess.exitValue() != 0) {
+                  throw new RuntimeException("qrencode failed")
+                }
+
+                // Write metadata (pages) into <base>.meta
+                val document = PDDocument.load(new File(baseName + ".pdf"))
+                val meta = new PrintWriter(new File(baseName + ".meta"))
+                meta.println(document.getNumberOfPages)
+                meta.close()
+
+                // create image from First page
+                val renderer = new PDFRenderer(document)
+                val image = renderer.renderImageWithDPI(0, 300, ImageType.RGB)
+                // write image to file
+                ImageIO.write(image, "png", new File(baseName + "-preview.png"))
+                document.close()
+
+                // setup a thread to delete all files starts with <base> in 72 h
+                val deleteThread = new Thread(() => {
+                  Thread.sleep(72 * 60 * 60 * 1000)
+                  val delete = new ProcessBuilder(
+                    "/usr/bin/find",
+                    "./print",
+                    "-name", uuid + "*",
+                    "-delete"
+                  )
+                  val deleteProcess = delete.start()
+                  deleteProcess.waitFor()
+                })
+                deleteThread.start()
+
+
+              } catch {
+                case e: Exception =>
+                  FeishuAPI.sendSingleMessage(s"无法处理您的文件。您可以试试重新上传，或者携带 U 盘来手动打印。", senderID)
               }
+
+
+            } else {
+              FeishuAPI.sendSingleMessage(s"无法下载您的文件，这可能是由于文件过大或其他原因。您可以试试重新上传，或者携带 U 盘来手动打印。", senderID)
             }
           } else {
             // Not valid file
             FeishuAPI.sendSingleMessage(
-              "文件格式好像不对。请向我发送扩展名为 `doc` 或 `docx` 的文件。", senderID
+              "非常抱歉，目前仅支持打印 PDF 格式的文件！您可以携带 U 盘前来手动打印，或将文档自行转换格式后再上传！", senderID
             )
           }
         }

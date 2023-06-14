@@ -13,7 +13,9 @@ lazy val root = (project in file("."))
       "org.eclipse.jetty" % "jetty-client" % "11.0.14",
       "javax.servlet" % "javax.servlet-api" % "4.0.1" % "provided",
       "org.apache.httpcomponents" % "httpclient" % "4.5.14",
-      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.14.2"
+      "org.apache.httpcomponents" % "httpmime" % "4.5.14",
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.14.2",
+      "org.apache.pdfbox" % "pdfbox" % "2.0.22"
     ),
     assembly / assemblyJarName := "learnbot.jar",
     assembly / mainClass := Some("top.criwits.learnbot.Main"),
