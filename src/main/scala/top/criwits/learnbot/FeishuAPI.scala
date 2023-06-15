@@ -6,7 +6,7 @@ import org.apache.http.HttpStatus
 import org.apache.http.client.methods.{HttpGet, HttpPost}
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
-import top.criwits.learnbot.json.{BatchResponse, BatchStatus, GroupInfo, GroupMembers, TenantAcessToken}
+import top.criwits.learnbot.json.{BatchResponse, BatchStatus, GroupInfo, GroupMembers, Image, TenantAcessToken}
 
 import java.io.{BufferedOutputStream, File, FileOutputStream, IOException}
 import java.time.LocalDateTime
@@ -321,9 +321,7 @@ object FeishuAPI {
     true
   }
 
-  def sendImage(file: File, userID: String) = {
-
-    def uploadImage(file: File): Unit = {
+  def uploadImage(file: File): String = {
       updateKey()
       val URL = "https://open.feishu.cn/open-apis/im/v1/images"
       val post = new HttpPost(URL)
@@ -350,7 +348,23 @@ object FeishuAPI {
       client.close()
 
       LOG.info("Upload image: " + responseBody)
-    }
+      val json = JsonHelper(responseBody, classOf[Image])
+      json.data.imageKey
+  }
+
+  def sendImageMessage(imageKey: String, userID: String): Unit = {
+    val body =
+      s"""{
+         |  "receive_id": "$userID",
+         |  "msg_type": "image",
+         |  "content": "{\\"image_key\\": \\"$imageKey\\"}"
+         |}""".stripMargin
+    sendMessageBody(body, userID)
+  }
+
+  def sendImage(file: File, userID: String): Unit = {
+    val imageKey = uploadImage(file)
+    sendImageMessage(imageKey, userID)
   }
 
 }

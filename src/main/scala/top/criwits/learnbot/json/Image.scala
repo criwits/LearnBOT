@@ -1,13 +1,16 @@
 package top.criwits.learnbot.json
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import top.criwits.learnbot.json.Image.Data
 
 case class Image(
     @JsonProperty("code") code: Int,
-    @JsonProperty("data") data: ImageData,
+    @JsonProperty("data") data: Data,
     @JsonProperty("msg") msg: String
 )
 
-case class ImageData(
-    @JsonProperty("image_key") imageKey: String
-)
+object Image {
+  case class Data(
+      @JsonProperty("image_key") imageKey: String
+  )
+}
